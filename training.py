@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-import numpy as np
 from model import SalesForecastLSTM
-from preprocessing import FEATURE_COLUMNS, build_forecast_features
+from preprocessing import FEATURE_COLUMNS
 
 
 def train_model(
@@ -105,40 +104,30 @@ def forecast(
     data: dict,
     horizon: int,
 ) -> list[float]:
-    """Generate recursive multi-step forecast.
+    """Direct multi-step forecast.
 
-    Predicts one month at a time, feeding each prediction back as input
-    for the next step.
+    Single forward pass predicts all 12 months, then slice first `horizon` months.
+    Horizon can be 1, 3, 6, or 12.
     """
     model.eval()
     feature_scaler = data["feature_scaler"]
     target_scaler = data["target_scaler"]
     seq_len = data["sequence_length"]
 
-    # Get the last sequence_length rows of scaled features as the starting window
+    # Get the last sequence_length rows of scaled features
     features = df[FEATURE_COLUMNS].values
     scaled_features = feature_scaler.transform(features)
-    window = list(scaled_features[-seq_len:])
-
-    last_date = df["date"].iloc[-1]
-    predicted_sales = []
+    window = scaled_features[-seq_len:]
 
     with torch.no_grad():
-        for step in range(horizon):
-            # Prepare input tensor from current window
-            x = torch.FloatTensor(np.array(window[-seq_len:])).unsqueeze(0)
-            scaled_pred = model(x).numpy()[0, 0]
+        x = torch.FloatTensor(window).unsqueeze(0)
+        scaled_preds = model(x).numpy()[0]  # shape: (12,)
 
-            # Inverse transform to get actual sales value
-            actual_pred = target_scaler.inverse_transform([[scaled_pred]])[0, 0]
-            actual_pred = max(actual_pred, 0)  # sales can't be negative
-            predicted_sales.append(actual_pred)
-
-            # Build feature vector for next step
-            next_features = build_forecast_features(
-                df, last_date, predicted_sales, horizon, step
-            )
-            scaled_next = feature_scaler.transform(next_features)
-            window.append(scaled_next[0])
+    # Inverse transform each prediction
+    predicted_sales = []
+    for val in scaled_preds[:horizon]:
+        actual = target_scaler.inverse_transform([[val]])[0, 0]
+        actual = max(actual, 0)  # sales can't be negative
+        predicted_sales.append(actual)
 
     return predicted_sales

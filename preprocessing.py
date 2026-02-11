@@ -141,11 +141,14 @@ def prepare_training_data(
     scaled_features = feature_scaler.fit_transform(features)
     scaled_target = target_scaler.fit_transform(target)
 
-    # Create sliding window sequences
+    max_horizon = 12  # model always predicts 12 months ahead
+    # User selects horizon (1/3/6/12) at inference → we slice first N from 12
+
+    # Create sliding window sequences with 12-step targets
     X, y = [], []
-    for i in range(sequence_length, len(scaled_features)):
+    for i in range(sequence_length, len(scaled_features) - max_horizon + 1):
         X.append(scaled_features[i - sequence_length : i])
-        y.append(scaled_target[i])
+        y.append(scaled_target[i : i + max_horizon].flatten())
 
     X = np.array(X)
     y = np.array(y)
@@ -168,63 +171,3 @@ def prepare_training_data(
     }
 
 
-def build_forecast_features(
-    df: pd.DataFrame,
-    last_date: pd.Timestamp,
-    predicted_sales: list[float],
-    horizon: int,
-    step: int,
-) -> np.ndarray:
-    """Build feature vector for the next forecast step.
-
-    Uses actual historical data + already predicted values to construct
-    the feature row for the next month to predict.
-    """
-    # Combine historical sales with predictions so far
-    all_sales = list(df["sales"].values) + predicted_sales
-    all_dates = list(df["date"].values)
-
-    next_date = last_date + pd.DateOffset(months=step + 1)
-    month = next_date.month
-    quarter = next_date.quarter
-    year = next_date.year
-
-    # Cyclical encodings
-    month_sin = np.sin(2 * np.pi * month / 12)
-    month_cos = np.cos(2 * np.pi * month / 12)
-    quarter_sin = np.sin(2 * np.pi * quarter / 4)
-    quarter_cos = np.cos(2 * np.pi * quarter / 4)
-
-    # Year normalization (extend from training range)
-    min_year = pd.Timestamp(all_dates[0]).year if len(all_dates) > 0 else year
-    max_year = max(pd.Timestamp(all_dates[-1]).year if len(all_dates) > 0 else year, year)
-    year_range = max(max_year - min_year, 1)
-    year_norm = (year - min_year) / year_range
-
-    n = len(all_sales)
-
-    # Lag features (from combined actual + predicted)
-    lag_1 = all_sales[-1] if n >= 1 else 0
-    lag_3 = all_sales[-3] if n >= 3 else all_sales[0]
-    lag_6 = all_sales[-6] if n >= 6 else all_sales[0]
-    lag_12 = all_sales[-12] if n >= 12 else all_sales[0]
-
-    # Rolling means
-    rolling_3 = np.mean(all_sales[-3:]) if n >= 3 else np.mean(all_sales)
-    rolling_6 = np.mean(all_sales[-6:]) if n >= 6 else np.mean(all_sales)
-    rolling_12 = np.mean(all_sales[-12:]) if n >= 12 else np.mean(all_sales)
-
-    # Month-over-month growth
-    if n >= 2 and all_sales[-2] != 0:
-        mom_growth = (all_sales[-1] - all_sales[-2]) / abs(all_sales[-2])
-    else:
-        mom_growth = 0.0
-
-    return np.array([
-        month_sin, month_cos,
-        quarter_sin, quarter_cos,
-        year_norm,
-        lag_1, lag_3, lag_6, lag_12,
-        rolling_3, rolling_6, rolling_12,
-        mom_growth,
-    ]).reshape(1, -1)
