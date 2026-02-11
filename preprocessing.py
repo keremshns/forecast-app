@@ -76,7 +76,7 @@ def engineer_features(dates: pd.Series, sales: pd.Series) -> pd.DataFrame:
     year_range = max(max_year - min_year, 1)
     df["year_norm"] = (df["date"].dt.year - min_year) / year_range
 
-    # Lag features
+    # Lag features (backfill early rows with earliest available value)
     df["lag_1"] = df["sales"].shift(1)
     df["lag_3"] = df["sales"].shift(3)
     df["lag_6"] = df["sales"].shift(6)
@@ -90,8 +90,15 @@ def engineer_features(dates: pd.Series, sales: pd.Series) -> pd.DataFrame:
     # Month-over-month growth rate
     df["mom_growth"] = df["sales"].pct_change(1)
 
-    # Drop rows with NaN from lag/rolling features (first 12 rows)
-    df = df.dropna().reset_index(drop=True)
+    # Fill NaN in lag/rolling columns with earliest available value per column
+    # (instead of dropping rows, which loses too much data with small datasets)
+    for col in ["lag_1", "lag_3", "lag_6", "lag_12",
+                "rolling_mean_3", "rolling_mean_6", "rolling_mean_12",
+                "mom_growth"]:
+        df[col] = df[col].bfill()
+
+    # Only the very first row might still have NaN (mom_growth), fill with 0
+    df = df.fillna(0).reset_index(drop=True)
 
     return df
 
@@ -108,13 +115,23 @@ FEATURE_COLUMNS = [
 
 def prepare_training_data(
     df: pd.DataFrame,
-    sequence_length: int = 12,
+    sequence_length: int | None = None,
     val_ratio: float = 0.2,
 ) -> dict:
     """Scale features and create sliding window sequences for LSTM training.
 
-    Returns dict with train/val tensors and the fitted scalers.
+    Sequence length adapts to dataset size if not specified:
+      - 12 if 36+ rows, 6 if 18+ rows, 3 as minimum fallback.
     """
+    n_rows = len(df)
+    if sequence_length is None:
+        if n_rows >= 36:
+            sequence_length = 12
+        elif n_rows >= 18:
+            sequence_length = 6
+        else:
+            sequence_length = 3
+
     feature_scaler = MinMaxScaler()
     target_scaler = MinMaxScaler()
 

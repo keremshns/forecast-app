@@ -109,18 +109,15 @@ with st.expander("Show engineered features"):
         hide_index=True,
     )
 
-st.markdown(
-    f"**{len(feat_df)}** usable data points after feature engineering "
-    f"({len(dates) - len(feat_df)} rows dropped due to lag window)"
-)
+st.markdown(f"**{len(feat_df)}** usable data points after feature engineering")
 
 # ── Training & Forecasting ───────────────────────────────────────────────────
 if not train_button:
     st.info('Click **"Train & Forecast"** in the sidebar to start.')
     st.stop()
 
-if len(feat_df) < 15:
-    st.error("Not enough data points after feature engineering. Need at least 24+ months of raw data.")
+if len(feat_df) < 6:
+    st.error("Not enough data points after feature engineering. Provide more monthly data.")
     st.stop()
 
 st.header("Training")
