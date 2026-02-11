@@ -6,7 +6,7 @@ CURRENCY_SYMBOLS = {"USD": "$", "TRY": "\u20BA"}
 
 # Colors
 ICE_BLUE = "#00BFFF"
-ORANGE = "#FF8C00"
+MAGENTA = "#FF00FF"
 DARK_BG = "#1E1E1E"
 PLOT_BG = "#2D2D2D"
 TEXT_CLR = "#E0E0E0"
@@ -54,7 +54,7 @@ def plot_forecast(
         x=[dates.iloc[-1], forecast_dates[0]],
         y=[actual_sales.iloc[-1], forecast_values[0]],
         mode="lines",
-        line=dict(color=ORANGE, width=2, dash="dash"),
+        line=dict(color=MAGENTA, width=2, dash="dash"),
         showlegend=False,
         hoverinfo="skip",
     ))
@@ -65,7 +65,7 @@ def plot_forecast(
         y=forecast_values,
         mode="lines+markers",
         name="Forecast",
-        line=dict(color=ORANGE, width=2, dash="dash"),
+        line=dict(color=MAGENTA, width=2, dash="dash"),
         marker=dict(size=7, symbol="diamond"),
         hovertemplate=f"Date: %{{x|%b %Y}}<br>Forecast: {symbol}%{{y:,.0f}}<extra></extra>",
     ))
@@ -103,7 +103,7 @@ def plot_loss_curves(train_losses: list[float], val_losses: list[float]) -> go.F
         y=val_losses,
         mode="lines",
         name="Validation Loss",
-        line=dict(color=ORANGE, width=2),
+        line=dict(color=MAGENTA, width=2),
         hovertemplate="Epoch: %{x}<br>Val Loss: %{y:.6f}<extra></extra>",
     ))
 
