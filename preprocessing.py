@@ -116,7 +116,7 @@ FEATURE_COLUMNS = [
 def prepare_training_data(
     df: pd.DataFrame,
     sequence_length: int | None = None,
-    val_ratio: float = 0.2,
+    val_ratio: float = 0.25,
 ) -> dict:
     """Scale features and create sliding window sequences for LSTM training.
 
