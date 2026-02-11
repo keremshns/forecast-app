@@ -7,10 +7,10 @@ from preprocessing import FEATURE_COLUMNS, build_forecast_features
 
 def train_model(
     data: dict,
-    max_epochs: int = 300,
+    max_epochs: int = 150,
     lr: float = 0.001,
-    weight_decay: float = 1e-4,
-    early_stop_patience: int = 20,
+    weight_decay: float = 1e-3,
+    early_stop_patience: int = 10,
     progress_callback=None,
 ) -> dict:
     """Train the LSTM model with Huber loss and AdamW optimizer.
@@ -37,7 +37,7 @@ def train_model(
     criterion = nn.SmoothL1Loss()  # Huber Loss
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", patience=10, factor=0.5, min_lr=1e-6
+        optimizer, mode="min", patience=5, factor=0.5, min_lr=1e-6
     )
 
     train_losses = []
