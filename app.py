@@ -3,12 +3,11 @@ import pandas as pd
 import numpy as np
 
 from preprocessing import validate_and_parse_csv, engineer_features, prepare_training_data
-from training import train_model, forecast, walk_forward_cv
+from training import train_model, forecast
 from visualization import (
     plot_forecast,
     plot_loss_curves,
     plot_seasonal_pattern,
-    plot_cv_results,
     format_currency,
     CURRENCY_SYMBOLS,
 )
@@ -41,13 +40,6 @@ with st.sidebar:
         format_func=lambda x: f"{x} month{'s' if x > 1 else ''}",
     )
 
-    n_folds = st.selectbox(
-        "Cross-Validation Folds",
-        options=[3, 4, 5],
-        index=0,
-        help="Number of walk-forward CV folds for model evaluation",
-    )
-
     train_button = st.button("Train & Forecast", type="primary", use_container_width=True)
 
     st.divider()
@@ -56,8 +48,7 @@ with st.sidebar:
         "- **Architecture:** 2-layer LSTM\n"
         "- **Loss:** Huber (SmoothL1)\n"
         "- **Optimizer:** AdamW\n"
-        "- **Scheduler:** ReduceLROnPlateau\n"
-        "- **Validation:** Walk-forward CV"
+        "- **Scheduler:** ReduceLROnPlateau"
     )
 
 # ── Main Area ────────────────────────────────────────────────────────────────
@@ -129,49 +120,13 @@ if len(feat_df) < 6:
     st.error("Not enough data points after feature engineering. Provide more monthly data.")
     st.stop()
 
-# ── Cross-Validation ─────────────────────────────────────────────────────────
-st.header("Cross-Validation")
+st.header("Training")
 
-cv_progress = st.progress(0, text="Running walk-forward cross-validation...")
-cv_status = st.empty()
-
-def on_cv_progress(fold, total_folds, epoch, max_epochs, train_loss, val_loss):
-    fold_pct = fold / total_folds
-    epoch_pct = (epoch + 1) / max_epochs / total_folds
-    pct = min(fold_pct + epoch_pct, 1.0)
-    cv_progress.progress(pct, text=f"Fold {fold + 1}/{total_folds} - Epoch {epoch + 1}/{max_epochs}")
-    cv_status.text(f"Train Loss: {train_loss:.6f} | Val Loss: {val_loss:.6f}")
-
-cv_results = walk_forward_cv(feat_df, n_folds=n_folds, progress_callback=on_cv_progress)
-
-cv_progress.progress(1.0, text="Cross-validation complete!")
-
-if cv_results:
-    avg_cv_loss = sum(r["best_val_loss"] for r in cv_results) / len(cv_results)
-    cv_status.text(f"Average CV loss: {avg_cv_loss:.6f} across {len(cv_results)} folds")
-
-    cv_fig = plot_cv_results(cv_results)
-    st.plotly_chart(cv_fig, use_container_width=True)
-
-    with st.expander("Fold details"):
-        fold_data = []
-        for r in cv_results:
-            fold_data.append({
-                "Fold": r["fold"],
-                "Train Samples": r["train_size"],
-                "Val Samples": r["val_size"],
-                "Epochs": r["total_epochs"],
-                "Best Val Loss": round(r["best_val_loss"], 6),
-            })
-        st.dataframe(pd.DataFrame(fold_data), use_container_width=True, hide_index=True)
-
-# ── Final Model Training ─────────────────────────────────────────────────────
-st.header("Final Model Training")
-st.caption("Training on full dataset for forecasting")
-
+# Prepare data
 data = prepare_training_data(feat_df)
 
-progress_bar = st.progress(0, text="Training final LSTM model...")
+# Training with progress
+progress_bar = st.progress(0, text="Training LSTM model...")
 status_text = st.empty()
 
 def on_progress(epoch, max_epochs, train_loss, val_loss):

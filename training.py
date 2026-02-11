@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
 from model import SalesForecastLSTM
 from preprocessing import FEATURE_COLUMNS, build_forecast_features
 
@@ -98,98 +97,6 @@ def train_model(
         "best_val_loss": best_val_loss,
         "total_epochs": len(train_losses),
     }
-
-
-def walk_forward_cv(
-    df,
-    n_folds: int = 3,
-    max_epochs: int = 200,
-    progress_callback=None,
-) -> list[dict]:
-    """Walk-forward (expanding window) cross-validation for time-series.
-
-    Splits data chronologically into expanding train sets with fixed-size
-    validation windows. Each fold trains a fresh model.
-
-    Returns list of per-fold result dicts.
-    """
-    n_rows = len(df)
-
-    # Determine sequence length (same logic as prepare_training_data)
-    if n_rows >= 36:
-        seq_len = 12
-    elif n_rows >= 18:
-        seq_len = 6
-    else:
-        seq_len = 3
-
-    features = df[FEATURE_COLUMNS].values
-    target = df[["sales"]].values
-
-    # We need at least seq_len + 2 rows per fold (1 train sample + 1 val sample)
-    min_train_size = seq_len + 2
-    available = n_rows - min_train_size
-    if available < n_folds:
-        n_folds = max(available, 1)
-
-    val_size = max(available // n_folds, 1)
-    fold_results = []
-    total_folds = n_folds
-
-    for fold in range(n_folds):
-        # Expanding window: train on everything up to val start
-        val_end = n_rows - (n_folds - fold - 1) * val_size
-        val_start = val_end - val_size
-        train_end = val_start
-
-        if train_end < min_train_size:
-            continue
-
-        # Scale on training portion only
-        feature_scaler = MinMaxScaler()
-        target_scaler = MinMaxScaler()
-
-        train_features = feature_scaler.fit_transform(features[:train_end])
-        train_target = target_scaler.fit_transform(target[:train_end])
-        val_features = feature_scaler.transform(features[val_start:val_end])
-        val_target = target_scaler.transform(target[val_start:val_end])
-
-        # Build sequences for training
-        X_train, y_train = [], []
-        for i in range(seq_len, len(train_features)):
-            X_train.append(train_features[i - seq_len : i])
-            y_train.append(train_target[i])
-
-        # Build sequences for validation (using training data as lookback)
-        all_features = np.vstack([train_features, val_features])
-        all_target = np.vstack([train_target, val_target])
-        X_val, y_val = [], []
-        for i in range(train_end, train_end + len(val_features)):
-            if i >= seq_len:
-                X_val.append(all_features[i - seq_len : i])
-                y_val.append(all_target[i])
-
-        if len(X_train) == 0 or len(X_val) == 0:
-            continue
-
-        data = {
-            "X_train": torch.FloatTensor(np.array(X_train)),
-            "y_train": torch.FloatTensor(np.array(y_train)),
-            "X_val": torch.FloatTensor(np.array(X_val)),
-            "y_val": torch.FloatTensor(np.array(y_val)),
-        }
-
-        def fold_progress(epoch, max_ep, tl, vl):
-            if progress_callback:
-                progress_callback(fold, total_folds, epoch, max_ep, tl, vl)
-
-        result = train_model(data, max_epochs=max_epochs, progress_callback=fold_progress)
-        result["fold"] = fold + 1
-        result["train_size"] = len(X_train)
-        result["val_size"] = len(X_val)
-        fold_results.append(result)
-
-    return fold_results
 
 
 def forecast(
