@@ -1,3 +1,5 @@
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from model import SalesForecastLSTM
@@ -6,10 +8,10 @@ from preprocessing import FEATURE_COLUMNS
 
 def train_model(
     data: dict,
-    max_epochs: int = 150,
+    max_epochs: int = 300,
     lr: float = 0.001,
-    weight_decay: float = 1e-3,
-    early_stop_patience: int = 10,
+    weight_decay: float = 1e-4,
+    early_stop_patience: int = 20,
     progress_callback=None,
 ) -> dict:
     """Train the LSTM model with Huber loss and AdamW optimizer.
@@ -29,6 +31,8 @@ def train_model(
     y_train = data["y_train"]
     X_val = data["X_val"]
     y_val = data["y_val"]
+    ff_train = data["ff_train"]  # future month features (N, 12, 2)
+    ff_val = data["ff_val"]
 
     input_size = X_train.shape[2]
     model = SalesForecastLSTM(input_size=input_size)
@@ -36,7 +40,7 @@ def train_model(
     criterion = nn.SmoothL1Loss()  # Huber Loss
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", patience=5, factor=0.5, min_lr=1e-6
+        optimizer, mode="min", patience=10, factor=0.5, min_lr=1e-6
     )
 
     train_losses = []
@@ -50,7 +54,7 @@ def train_model(
         # Training
         model.train()
         optimizer.zero_grad()
-        train_pred = model(X_train)
+        train_pred = model(X_train, ff_train)
         train_loss = criterion(train_pred, y_train)
         train_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -59,7 +63,7 @@ def train_model(
         # Validation
         model.eval()
         with torch.no_grad():
-            val_pred = model(X_val)
+            val_pred = model(X_val, ff_val)
             val_loss = criterion(val_pred, y_val)
 
         train_losses.append(train_loss.item())
@@ -104,7 +108,7 @@ def forecast(
     data: dict,
     horizon: int,
 ) -> list[float]:
-    """Direct multi-step forecast.
+    """Encoder-decoder forecast with seasonal awareness.
 
     Single forward pass predicts all 12 months, then slice first `horizon` months.
     Horizon can be 1, 3, 6, or 12.
@@ -119,9 +123,16 @@ def forecast(
     scaled_features = feature_scaler.transform(features)
     window = scaled_features[-seq_len:]
 
+    # Build future month features (month_sin, month_cos) for the next 12 months
+    last_date = df["date"].iloc[-1]
+    future_months = [(last_date + pd.DateOffset(months=i + 1)).month for i in range(12)]
+    fm_sin = np.sin(2 * np.pi * np.array(future_months) / 12)
+    fm_cos = np.cos(2 * np.pi * np.array(future_months) / 12)
+    future_feats = torch.FloatTensor(np.stack([fm_sin, fm_cos], axis=1)).unsqueeze(0)  # (1, 12, 2)
+
     with torch.no_grad():
         x = torch.FloatTensor(window).unsqueeze(0)
-        scaled_preds = model(x).numpy()[0]  # shape: (12,)
+        scaled_preds = model(x, future_feats).numpy()[0]  # shape: (12,)
 
     # Inverse transform each prediction
     predicted_sales = []

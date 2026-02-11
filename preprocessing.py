@@ -144,14 +144,24 @@ def prepare_training_data(
     max_horizon = 12  # model always predicts 12 months ahead
     # User selects horizon (1/3/6/12) at inference → we slice first N from 12
 
-    # Create sliding window sequences with 12-step targets
-    X, y = [], []
+    # Precompute month_sin/month_cos for all rows
+    months = df["date"].dt.month.values
+    all_month_sin = np.sin(2 * np.pi * months / 12)
+    all_month_cos = np.cos(2 * np.pi * months / 12)
+
+    # Create sliding window sequences with 12-step targets + future month features
+    X, y, future_feats = [], [], []
     for i in range(sequence_length, len(scaled_features) - max_horizon + 1):
         X.append(scaled_features[i - sequence_length : i])
         y.append(scaled_target[i : i + max_horizon].flatten())
+        # Future month features for the 12 target months
+        fm_sin = all_month_sin[i : i + max_horizon]
+        fm_cos = all_month_cos[i : i + max_horizon]
+        future_feats.append(np.stack([fm_sin, fm_cos], axis=1))  # (12, 2)
 
     X = np.array(X)
     y = np.array(y)
+    future_feats = np.array(future_feats)
 
     # Train/validation split (last val_ratio as validation)
     split_idx = int(len(X) * (1 - val_ratio))
@@ -159,12 +169,15 @@ def prepare_training_data(
 
     X_train, X_val = X[:split_idx], X[split_idx:]
     y_train, y_val = y[:split_idx], y[split_idx:]
+    ff_train, ff_val = future_feats[:split_idx], future_feats[split_idx:]
 
     return {
         "X_train": torch.FloatTensor(X_train),
         "y_train": torch.FloatTensor(y_train),
         "X_val": torch.FloatTensor(X_val),
         "y_val": torch.FloatTensor(y_val),
+        "ff_train": torch.FloatTensor(ff_train),  # (N, 12, 2) future month features
+        "ff_val": torch.FloatTensor(ff_val),
         "feature_scaler": feature_scaler,
         "target_scaler": target_scaler,
         "sequence_length": sequence_length,
