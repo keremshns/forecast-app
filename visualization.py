@@ -4,6 +4,18 @@ import plotly.graph_objects as go
 
 CURRENCY_SYMBOLS = {"USD": "$", "TRY": "\u20BA"}
 
+# Color palette
+CLR_LIGHT_BLUE = "#5B9BD5"
+CLR_ORANGE = "#FF8C00"
+CLR_BG = "#F0F0F0"
+
+CHART_LAYOUT = dict(
+    template="plotly_white",
+    paper_bgcolor=CLR_BG,
+    plot_bgcolor="#FFFFFF",
+    font=dict(color="#333333"),
+)
+
 
 def format_currency(value: float, currency: str) -> str:
     symbol = CURRENCY_SYMBOLS.get(currency, "$")
@@ -28,7 +40,7 @@ def plot_forecast(
         y=actual_sales,
         mode="lines+markers",
         name="Historical Sales",
-        line=dict(color="#2563eb", width=2),
+        line=dict(color=CLR_LIGHT_BLUE, width=2),
         marker=dict(size=5),
         hovertemplate=f"Date: %{{x|%b %Y}}<br>Sales: {symbol}%{{y:,.0f}}<extra></extra>",
     ))
@@ -38,7 +50,7 @@ def plot_forecast(
         x=[dates.iloc[-1], forecast_dates[0]],
         y=[actual_sales.iloc[-1], forecast_values[0]],
         mode="lines",
-        line=dict(color="#dc2626", width=2, dash="dash"),
+        line=dict(color=CLR_ORANGE, width=2, dash="dash"),
         showlegend=False,
         hoverinfo="skip",
     ))
@@ -49,17 +61,17 @@ def plot_forecast(
         y=forecast_values,
         mode="lines+markers",
         name="Forecast",
-        line=dict(color="#dc2626", width=2, dash="dash"),
+        line=dict(color=CLR_ORANGE, width=2, dash="dash"),
         marker=dict(size=7, symbol="diamond"),
         hovertemplate=f"Date: %{{x|%b %Y}}<br>Forecast: {symbol}%{{y:,.0f}}<extra></extra>",
     ))
 
     fig.update_layout(
+        **CHART_LAYOUT,
         title="Sales Forecast",
         xaxis_title="Date",
         yaxis_title=f"Sales ({currency})",
         hovermode="x unified",
-        template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         height=450,
     )
@@ -78,7 +90,7 @@ def plot_loss_curves(train_losses: list[float], val_losses: list[float]) -> go.F
         y=train_losses,
         mode="lines",
         name="Training Loss",
-        line=dict(color="#2563eb", width=2),
+        line=dict(color=CLR_LIGHT_BLUE, width=2),
         hovertemplate="Epoch: %{x}<br>Train Loss: %{y:.6f}<extra></extra>",
     ))
 
@@ -87,16 +99,16 @@ def plot_loss_curves(train_losses: list[float], val_losses: list[float]) -> go.F
         y=val_losses,
         mode="lines",
         name="Validation Loss",
-        line=dict(color="#dc2626", width=2),
+        line=dict(color=CLR_ORANGE, width=2),
         hovertemplate="Epoch: %{x}<br>Val Loss: %{y:.6f}<extra></extra>",
     ))
 
     fig.update_layout(
+        **CHART_LAYOUT,
         title="Training Loss (Huber / SmoothL1)",
         xaxis_title="Epoch",
         yaxis_title="Loss",
         hovermode="x unified",
-        template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         height=400,
     )
@@ -127,16 +139,52 @@ def plot_seasonal_pattern(
     fig.add_trace(go.Bar(
         x=labels,
         y=avg_by_month.values,
-        marker_color="#2563eb",
+        marker_color=CLR_LIGHT_BLUE,
         hovertemplate=f"Month: %{{x}}<br>Avg Sales: {symbol}%{{y:,.0f}}<extra></extra>",
     ))
 
     fig.update_layout(
+        **CHART_LAYOUT,
         title="Seasonal Pattern (Average Sales by Month)",
         xaxis_title="Month",
         yaxis_title=f"Average Sales ({currency})",
-        template="plotly_white",
         height=400,
+    )
+
+    return fig
+
+
+def plot_cv_results(cv_results: list[dict]) -> go.Figure:
+    """Plot per-fold validation loss from walk-forward cross-validation."""
+    folds = list(range(1, len(cv_results) + 1))
+    val_losses = [r["best_val_loss"] for r in cv_results]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=[f"Fold {f}" for f in folds],
+        y=val_losses,
+        marker_color=CLR_ORANGE,
+        hovertemplate="Fold: %{x}<br>Val Loss: %{y:.6f}<extra></extra>",
+    ))
+
+    avg_loss = sum(val_losses) / len(val_losses)
+    fig.add_hline(
+        y=avg_loss,
+        line_dash="dash",
+        line_color=CLR_LIGHT_BLUE,
+        line_width=2,
+        annotation_text=f"Avg: {avg_loss:.6f}",
+        annotation_position="top right",
+        annotation_font_color=CLR_LIGHT_BLUE,
+    )
+
+    fig.update_layout(
+        **CHART_LAYOUT,
+        title="Walk-Forward Cross-Validation (per fold)",
+        xaxis_title="Fold",
+        yaxis_title="Validation Loss (Huber)",
+        height=350,
     )
 
     return fig
