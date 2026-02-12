@@ -8,6 +8,8 @@ from visualization import (
     plot_forecast,
     plot_loss_curves,
     plot_seasonal_pattern,
+    plot_yearly_comparison,
+    compute_seasonal_insights,
     format_currency,
     CURRENCY_SYMBOLS,
 )
@@ -182,7 +184,105 @@ st.download_button(
     mime="text/csv",
 )
 
-# ── Seasonal Pattern ─────────────────────────────────────────────────────────
-st.header("Seasonal Pattern")
+# ── Seasonal Analysis ────────────────────────────────────────────────────────
+st.header("Seasonal Analysis")
+
+insights = compute_seasonal_insights(feat_df["date"], feat_df["sales"])
+
+# Key metrics row
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Peak Month", insights["peak_month"], format_currency(insights["peak_value"], currency))
+m2.metric("Low Month", insights["low_month"], format_currency(insights["low_value"], currency))
+m3.metric("Seasonal Strength", f"{insights['seasonal_strength']:.1f}%",
+          help="Coefficient of variation of monthly averages. Higher = more seasonal.")
+m4.metric("Peak / Low Ratio", f"{insights['peak_to_low_ratio']:.2f}x",
+          help="How many times higher the best month is vs the worst month.")
+
+# Monthly pattern chart
+st.subheader("Monthly Pattern")
+st.caption("Average sales per month with min–max range band. Bars colored by quarter.")
 seasonal_fig = plot_seasonal_pattern(feat_df["date"], feat_df["sales"], currency)
 st.plotly_chart(seasonal_fig, use_container_width=True)
+
+# Year-over-year comparison
+if insights["num_years"] >= 2:
+    st.subheader("Year-over-Year Comparison")
+    st.caption("Each line represents one year's monthly sales, making trends and shifts easy to spot.")
+    yoy_fig = plot_yearly_comparison(feat_df["date"], feat_df["sales"], currency)
+    st.plotly_chart(yoy_fig, use_container_width=True)
+
+    # YoY growth cards
+    if insights["yoy_growth"]:
+        st.subheader("Annual Growth")
+        growth_cols = st.columns(len(insights["yoy_growth"]))
+        for col, g in zip(growth_cols, insights["yoy_growth"]):
+            delta_color = "normal" if g["growth_pct"] >= 0 else "inverse"
+            col.metric(
+                g["period"],
+                format_currency(g["curr_total"], currency),
+                f"{g['growth_pct']:+.1f}%",
+                delta_color=delta_color,
+            )
+
+# Quarter breakdown
+st.subheader("Quarter Breakdown")
+q_cols = st.columns(len(insights["quarter_data"]))
+for col, qd in zip(q_cols, insights["quarter_data"]):
+    sign = "+" if qd["vs_overall"] >= 0 else ""
+    col.metric(
+        qd["quarter"],
+        format_currency(qd["avg_sales"], currency),
+        f"{sign}{qd['vs_overall']:.1f}% vs avg",
+        delta_color="normal" if qd["vs_overall"] >= 0 else "inverse",
+    )
+
+# Textual insights
+st.subheader("Insights")
+insight_lines = []
+insight_lines.append(
+    f"**{insights['peak_month']}** is your strongest month with average sales of "
+    f"**{format_currency(insights['peak_value'], currency)}**, while "
+    f"**{insights['low_month']}** is the weakest at "
+    f"**{format_currency(insights['low_value'], currency)}**."
+)
+
+if insights["seasonal_strength"] > 15:
+    insight_lines.append(
+        f"Your business shows **strong seasonality** ({insights['seasonal_strength']:.1f}% variation). "
+        "Plan inventory and staffing around peak and low months."
+    )
+elif insights["seasonal_strength"] > 5:
+    insight_lines.append(
+        f"Your business shows **moderate seasonality** ({insights['seasonal_strength']:.1f}% variation). "
+        "Some months consistently outperform others."
+    )
+else:
+    insight_lines.append(
+        f"Your sales are **relatively stable** across months ({insights['seasonal_strength']:.1f}% variation). "
+        "No strong seasonal swings detected."
+    )
+
+insight_lines.append(
+    f"Best performing quarter: **{insights['best_quarter']}** — "
+    f"Weakest quarter: **{insights['worst_quarter']}**."
+)
+
+if insights["yoy_growth"]:
+    latest = insights["yoy_growth"][-1]
+    direction = "grew" if latest["growth_pct"] >= 0 else "declined"
+    insight_lines.append(
+        f"Annual sales **{direction} {abs(latest['growth_pct']):.1f}%** "
+        f"in the most recent period ({latest['period']})."
+    )
+
+insight_lines.append(
+    f"Month-to-month volatility is **{insights['mom_volatility']:.1f}%**, "
+    + ("which is high — expect significant swings between consecutive months."
+       if insights["mom_volatility"] > 15
+       else "indicating fairly smooth transitions between months."
+       if insights["mom_volatility"] < 8
+       else "which is moderate.")
+)
+
+for line in insight_lines:
+    st.markdown(f"- {line}")
